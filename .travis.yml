@@ -1,0 +1,131 @@
+# Copyright 2019 JanusGraph Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+language: java
+sudo: required
+dist: trusty
+services:
+  - docker
+jdk:
+  - openjdk8
+
+git:
+  depth: false
+
+cache:
+  directories:
+    - ${HOME}/.m2
+
+env:
+  global:
+    # This is the encrypted COVERITY_SCAN_TOKEN, created via the
+    # `travis encrypt` command using the project repo's public key.
+    - secure: "v5ixqTeb74y0vRuPcDbe3C28GDDYvqyEXA2dt+9UVU6GG7WpnmpkBf05gI1dIhp51lBhwx9WSlFBtzho+KdCBmNY/CzBRhVHe/lCQYK9Hb6uGPvuwBvC0WjJgJXsVrLFjppeRhcf+OAweVQ3uw2RPMDRvKIVMUcO1BTFjjJl6REJXNUdzGS57MtH2mmRyOEz250EwgqUELZvcOytG7fNrjMJKVK2nSsoxi0BqZIpItTWPWWeQ1wi1FplJ18A2qtD+MPfAGNSB+/a+r0Av+VCT2eGl06ZyZAzP3q/vG5IYjQ3AJsSPqcZUt4ms+2us1+kwuzXIILjzZmcfImu29+y/thndU5E5b2v+nZ4H69CUCc5OmKW2RwozLNmBIUhO0n+35va/J7FiPIqm3pwxCz5vWA3YTHDADxnIYe7+9uY/+dOK/AvP5fyu7u07vuF3liKNBdrX7ylP3kYc7FXGmYl8wCZv31iy1yTtndQ9qKef7bo8lM9Cdh39KyowrygH+Um7pr9gqf2S9jn99nQ3bib32fBWgBkLpJRwhZYHPUupZjZfgu/9woby0DuriuHZKMqZd7QUawYz6wXGlhzu78x5Tohlj1pGBwHYdcJ/Tm3PiEpyH4aYQLffkjGHJAcCW5tO8QbB0qrLYWC8xVMWuFz1TpSBRXOqVYdBfIa2UZDtOU="
+    # Default Elasticsearch heap size can be too large for Travis
+    - ES_JAVA_OPTS="-Xms256m -Xmx512m"
+    - export STRUCTOR_VERSION=v1.7.1
+
+stages:
+  - test
+  - documentation
+  - deploy
+
+x-template:
+  &FULL_BUILD_JOB
+  stage: test
+  install: travis_wait mvn clean install -DskipTests=true
+    -Dmaven.javadoc.skip=true --show-version ${INSTALL_ARGS};
+  script: travis_wait 50 mvn verify ${ARGS};
+  if: type = cron OR commit_message =~ /\[full build\]/
+
+x-template:
+  &STANDARD_TEST_JOB
+  stage: test
+  install: travis_wait mvn clean install -DskipTests=true 
+    -Dmaven.javadoc.skip=true --show-version ${INSTALL_ARGS};
+  script: travis_wait 50 mvn verify -Pcoverage ${ARGS};
+  after_success: bash <(curl -s https://codecov.io/bash);
+  if: commit_message !~ /\[doc only\]/
+
+x-template:
+  &TINKERPOP_TEST_JOB
+  stage: test
+  install: travis_wait mvn clean install -DskipTests=true 
+    -Dmaven.javadoc.skip=true --show-version ${INSTALL_ARGS};
+  script: travis_wait 50 mvn verify -Dtest.skip.tp=false -DskipTests=true ${ARGS};
+  if: commit_message !~ /\[doc only\]/
+
+jobs:
+  include:
+    - <<: *STANDARD_TEST_JOB
+      env: ARGS='-Dtest=**/diskstorage/cassandra/thrift/* -Dtest.skip.unordered=true -Dtest.skip.ssl=true -Dtest.skip.serial=true'
+    - <<: *STANDARD_TEST_JOB
+      env: ARGS='-Dtest=**/diskstorage/cassandra/thrift/* -Dtest.skip.ordered=true -Dtest.skip.ssl=true -Dtest.skip.serial=true'
+    - <<: *STANDARD_TEST_JOB
+      env: ARGS='-Dtest=**/diskstorage/cassandra/thrift/* -Dtest.skip.unordered=true -Dtest.skip.ordered=true'
+    - <<: *STANDARD_TEST_JOB
+      env: ARGS='-Dtest=**/graphdb/thrift/* -Dtest.skip.unordered=true -Dtest.skip.ssl=true -Dtest.skip.serial=true'
+    - <<: *STANDARD_TEST_JOB
+      env: ARGS='-Dtest=**/graphdb/thrift/* -Dtest.skip.ordered=true -Dtest.skip.ssl=true -Dtest.skip.serial=true'
+    - <<: *STANDARD_TEST_JOB
+      env: ARGS='-Dtest=**/graphdb/thrift/* -Dtest.skip.unordered=true -Dtest.skip.ordered=true'
+    - <<: *STANDARD_TEST_JOB
+      env: ARGS='-Dtest=**/diskstorage/cassandra/astyanax/* -Dtest.skip.unordered=true -Dtest.skip.ssl=true -Dtest.skip.serial=true'
+    - <<: *STANDARD_TEST_JOB
+      env: ARGS='-Dtest=**/diskstorage/cassandra/astyanax/* -Dtest.skip.ordered=true -Dtest.skip.ssl=true -Dtest.skip.serial=true'
+    - <<: *STANDARD_TEST_JOB
+      env: ARGS='-Dtest=**/diskstorage/cassandra/astyanax/* -Dtest.skip.unordered=true -Dtest.skip.ordered=true'
+    - <<: *STANDARD_TEST_JOB
+      env: ARGS='-Dtest=**/graphdb/astyanax/*'
+    - <<: *STANDARD_TEST_JOB
+      env: ARGS='-Dtest=**/diskstorage/cassandra/embedded/*'
+    - <<: *STANDARD_TEST_JOB
+      env: ARGS='-Dtest=***/cassandra/*,*/graphdb/embedded/*'
+
+    - <<: *FULL_BUILD_JOB
+      env: CASSANDRA_VERSION='3.11.0' CASSANDRA_ENABLE_BOP='true' ARGS='-Dtest=**/thrift/* -Dtest.skip.unordered=true -Dtest.skip.ssl=true -Dtest.skip.serial=true'
+    - <<: *FULL_BUILD_JOB
+      env: CASSANDRA_VERSION='3.11.0' ARGS='-Dtest=**/thrift/* -Dtest.skip.ordered=true -Dtest.skip.ssl=true'
+    - <<: *FULL_BUILD_JOB
+      env: CASSANDRA_VERSION='3.11.0' CASSANDRA_ENABLE_SSL='true' ARGS='-Dtest=**/thrift/* -Dtest.skip.unordered=true -Dtest.skip.ordered=true -Dtest.skip.serial=true'
+    - <<: *FULL_BUILD_JOB
+      env: CASSANDRA_VERSION='3.11.0' CASSANDRA_ENABLE_BOP='true' ARGS='-Dtest=**/astyanax/* -Dtest.skip.unordered=true -Dtest.skip.ssl=true -Dtest.skip.serial=true'
+    - <<: *FULL_BUILD_JOB
+      env: CASSANDRA_VERSION='3.11.0' ARGS='-Dtest=**/astyanax/* -Dtest.skip.ordered=true -Dtest.skip.ssl=true'
+    - <<: *FULL_BUILD_JOB
+      env: CASSANDRA_VERSION='3.11.0' CASSANDRA_ENABLE_SSL='true' ARGS='-Dtest=**/astyanax/* -Dtest.skip.unordered=true -Dtest.skip.ordered=true -Dtest.skip.serial=true'
+    - <<: *FULL_BUILD_JOB
+      env: CASSANDRA_VERSION='3.11.0' ARGS='-Dtest=**/cassandra/*,**/utils/*'
+    - <<: *FULL_BUILD_JOB
+      env: CASSANDRA_VERSION='3.0.14' CASSANDRA_ENABLE_BOP='true' ARGS='-Dtest=**/thrift/* -Dtest.skip.unordered=true -Dtest.skip.ssl=true -Dtest.skip.serial=true'
+    - <<: *FULL_BUILD_JOB
+      env: CASSANDRA_VERSION='3.0.14' ARGS='-Dtest=**/thrift/* -Dtest.skip.ordered=true -Dtest.skip.ssl=true'
+    - <<: *FULL_BUILD_JOB
+      env: CASSANDRA_VERSION='3.0.14' CASSANDRA_ENABLE_SSL='true' ARGS='-Dtest=**/thrift/* -Dtest.skip.unordered=true -Dtest.skip.ordered=true -Dtest.skip.serial=true'
+    - <<: *FULL_BUILD_JOB
+      env: CASSANDRA_VERSION='3.0.14' CASSANDRA_ENABLE_BOP='true' ARGS='-Dtest=**/astyanax/* -Dtest.skip.unordered=true -Dtest.skip.ssl=true -Dtest.skip.serial=true'
+    - <<: *FULL_BUILD_JOB
+      env: CASSANDRA_VERSION='3.0.14' ARGS='-Dtest=**/astyanax/* -Dtest.skip.ordered=true -Dtest.skip.ssl=true'
+    - <<: *FULL_BUILD_JOB
+      env: CASSANDRA_VERSION='3.0.14' CASSANDRA_ENABLE_SSL='true' ARGS='-Dtest=**/astyanax/* -Dtest.skip.unordered=true -Dtest.skip.ordered=true -Dtest.skip.serial=true'
+    - <<: *FULL_BUILD_JOB
+      env: CASSANDRA_VERSION='3.0.14' ARGS='-Dtest=**/cassandra/*,**/utils/*'
+
+  fast_finish: true
+  # https://docs.travis-ci.com/user/customizing-the-build#Rows-that-are-Allowed-to-Fail
+
+# Syntax and more info: https://docs.travis-ci.com/user/notifications
+notifications:
+  email:
+    - janusgraph-ci@googlegroups.com
