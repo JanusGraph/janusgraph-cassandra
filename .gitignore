@@ -1,0 +1,15 @@
+*.log
+target/
+.idea/
+*.iml
+*.DS_Store
+.vscode/
+/_bsp/
+/output/
+/docker/*.zip
+.surefire-*
+/jub.*.xml
+.classpath
+.factorypath
+.project
+org.eclipse.*
